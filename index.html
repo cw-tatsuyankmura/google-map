@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#000000" />
+
+    <title>Test Google Map</title>
+
+    <style>
+      #address {
+        -webkit-appearance: none;
+        -moz-appearance: none;
+        appearance: none;
+        position: relative;
+        display: block;
+        background: #fff;
+        border: solid 1px #ddd;
+        border-radius: 3px;
+        padding: 10px 12px;
+        width: 400px;
+        box-sizing: border-box;
+        min-height: 39px;
+        font-size: 14px;
+      }
+    </style>
+
+    <script
+      src="https://code.jquery.com/jquery-3.4.1.min.js"
+      integrity="sha256-CSXorXvZcTkaix6Yvo6HppcZGetbYMGWSFlBw8HfCJo="
+      crossorigin="anonymous"
+    ></script>
+  </head>
+  <body>
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+
+    <div id="map"></div>
+
+    <input
+      type="text"
+      id="address"
+      placeholder="東京都目黒区下目黒２丁目１９−６ F&Tビル2F"
+    />
+    <dl>
+      <dt>最寄駅</dt>
+      <dd id="station"></dd>
+      <dt>距離</dt>
+      <dd id="distance"></dd>
+      <dt>徒歩</dt>
+      <dd id="time"></dd>
+      <dt>Error</dt>
+      <dd id="error"></dd>
+    </dl>
+
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyB5tNOsJZwx9TpTnd-fAtiks-Ww-uQhEfc&v=3.33&libraries=places,geometry"></script>
+
+    <script>
+      const NEARLY_DISTANCE_METER = 1000;
+      const NEARLY_TYPES_TRAIN_STATION = ['train_station'];
+      const TRAVEL_MODE_WALKING = 'WALKING';
+
+      const getGeocode = address => {
+        return new Promise((resolve, reject) => {
+          const geocoder = new google.maps.Geocoder();
+          geocoder.geocode({ address }, (results, status) => {
+            if (status !== 'OK') {
+              reject('ロケーションを取得できませんでした');
+              return;
+            }
+            const geo = results[0].geometry.location;
+            resolve(new google.maps.LatLng(geo.lat(), geo.lng()));
+          });
+        });
+      };
+
+      const getNearlyStation = location => {
+        return new Promise((resolve, reject) => {
+          const placesService = new google.maps.places.PlacesService(map);
+          placesService.nearbySearch(
+            {
+              location,
+              radius: NEARLY_DISTANCE_METER,
+              type: NEARLY_TYPES_TRAIN_STATION,
+            },
+            (results, status) => {
+              if (status !== 'OK') {
+                reject('最寄りの駅を取得できませんでした');
+                return;
+              }
+              const geo = results[0].geometry.location;
+              resolve({
+                name: results[0].name,
+                location: new google.maps.LatLng(geo.lat(), geo.lng()),
+              });
+            },
+          );
+        });
+      };
+
+      const getDistanceTwoPoint = (baseLocation, destination) => {
+        return new Promise((resolve, reject) => {
+          const distance = new google.maps.DistanceMatrixService();
+          distance.getDistanceMatrix(
+            {
+              origins: [baseLocation],
+              destinations: [destination],
+              travelMode: TRAVEL_MODE_WALKING,
+            },
+            (response, status) => {
+              if (status !== 'OK') {
+                reject('距離と時間を取得できませんでした');
+                return;
+              }
+              resolve({
+                distance: response.rows[0].elements[0].distance.text,
+                time: response.rows[0].elements[0].duration.text,
+              });
+            },
+          );
+        });
+      };
+
+      const getDistanceNearlyStation = async address => {
+        if (!address) return;
+        try {
+          const spaceLatLng = await getGeocode(address);
+          const { name, location } = await getNearlyStation(spaceLatLng);
+          const { distance, time } = await getDistanceTwoPoint(
+            spaceLatLng,
+            location,
+          );
+          return { isError: false, name, distance, time };
+        } catch (error) {
+          return { isError: true, errorMessage: error };
+        }
+      };
+
+      document.addEventListener('DOMContentLoaded', function() {
+        const $address = $('#address');
+        const $station = $('#station');
+        const $distance = $('#distance');
+        const $time = $('#time');
+        const $error = $('#error');
+
+        $address.on('blur', async function(e) {
+          const results = await getDistanceNearlyStation(e.target.value);
+          if (results.isError) {
+            $error.text(results.errorMessage);
+            return;
+          }
+          $station.text(results.name);
+          $distance.text(results.distance);
+          $time.text(results.time);
+          $error.text('');
+        });
+      });
+    </script>
+  </body>
+</html>
